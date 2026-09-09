@@ -1,0 +1,177 @@
+name: Compilar APK de Asiste
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Generar el proyecto nativo de Android
+        # El repo solo trae pubspec.yaml + lib/. Este comando rellena SOLO
+        # lo que falta (carpeta android/ con su gradle wrapper, iconos,
+        # MainActivity, etc.) sin tocar pubspec.yaml ni lib/, porque ya
+        # detecta que es un proyecto Flutter existente.
+        run: flutter create --platforms=android --org com.asiste.app .
+
+      - name: Reemplazar el AndroidManifest y copiar el sonido de alarma
+        run: |
+          cp android_overlay/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          mkdir -p android/app/src/main/res/raw
+          cp android_overlay/alarm.wav android/app/src/main/res/raw/alarm.wav
+
+      - name: Reglas de ProGuard/R8 para flutter_local_notifications (Gson)
+        # Sin esto, el build de release (minificado) rompe al programar
+        # alarmas con "TypeToken must be created with a type argument",
+        # porque R8 borra la información genérica que el plugin necesita
+        # para leer/escribir su caché de alarmas programadas. Se reemplaza
+        # el archivo por si "flutter create" generó uno vacío.
+        run: |
+          cp android_overlay/proguard-rules.pro android/app/proguard-rules.pro
+          if [ -f android/app/build.gradle.kts ]; then
+            cat >> android/app/build.gradle.kts <<'EOF'
+
+          android {
+              buildTypes {
+                  getByName("release") {
+                      isMinifyEnabled = true
+                      isShrinkResources = false
+                      proguardFiles(
+                          getDefaultProguardFile("proguard-android-optimize.txt"),
+                          "proguard-rules.pro"
+                      )
+                  }
+              }
+          }
+          EOF
+          else
+            cat >> android/app/build.gradle <<'EOF'
+
+          android {
+              buildTypes {
+                  release {
+                      minifyEnabled true
+                      shrinkResources false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+          }
+          EOF
+          fi
+
+      - name: Evitar fallo por JVM target inconsistente en plugins (flutter_timezone, etc.)
+        # Algunos plugins (ej. flutter_timezone) compilan su código Java con JDK 11
+        # pero no fijan el target de su código Kotlin, que cae por defecto en 1.8.
+        # Eso es una inconsistencia interna del propio plugin (no de nuestro código),
+        # y las versiones nuevas de Kotlin Gradle Plugin la tratan como error duro.
+        # La bajamos a "warning" para que la build no falle por esto si queda algún
+        # caso suelto que el parche de abajo no cubra.
+        run: printf '\nkotlin.jvm.target.validation.mode=warning\n' >> android/gradle.properties
+
+      - name: Activar desugaring (lo necesita flutter_local_notifications)
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            cat >> android/app/build.gradle.kts <<'EOF'
+
+          android {
+              compileOptions {
+                  isCoreLibraryDesugaringEnabled = true
+              }
+          }
+
+          dependencies {
+              coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+          }
+          EOF
+          else
+            cat >> android/app/build.gradle <<'EOF'
+
+          android {
+              compileOptions {
+                  coreLibraryDesugaringEnabled true
+              }
+          }
+
+          dependencies {
+              coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+          }
+          EOF
+          fi
+
+      - name: Instalar dependencias (aquí se ve si algo es incompatible)
+        run: flutter pub get
+
+      - name: Parchear directamente el build.gradle de cada plugin conflictivo
+        # flutter_timezone, flutter_tts y speech_to_text compilan su Java a target 11
+        # pero NO fijan el target de su propio Kotlin, que se queda en el valor por
+        # defecto (1.8) -> "Inconsistent JVM Target Compatibility".
+        #
+        # Un intento anterior reconfiguraba esto desde el build.gradle RAÍZ (con
+        # subprojects + tasks.withType(KotlinCompile) / extensions.configure(BaseExtension)).
+        # Eso no solo no tuvo efecto sobre el error original, sino que además rompía la
+        # build con "sourceCompatibility has been finalized", porque en AGP reciente esa
+        # propiedad ya está bloqueada para cuando ese código llega a correr.
+        #
+        # La solución que sí funciona es editar el archivo build.gradle del propio
+        # plugin (dentro del pub-cache, después de `flutter pub get`), añadiendo al
+        # FINAL de ESE MISMO archivo un bloque "android { kotlinOptions { jvmTarget =
+        # "11" } }". Al estar en el mismo archivo, usa el mismo classloader que ya
+        # aplicó el plugin de Kotlin unas líneas más arriba, y al ir al final,
+        # sobrescribe cualquier valor que el propio plugin haya fijado antes. Esto no
+        # toca nada de la raíz ni depende del orden de evaluación entre proyectos.
+        run: |
+          PUB_CACHE_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
+          echo "Usando pub-cache en: $PUB_CACHE_DIR"
+          for pkg in flutter_timezone flutter_tts speech_to_text; do
+            pkg_dir=$(find "$PUB_CACHE_DIR/hosted" -maxdepth 3 -type d -iname "${pkg}-*" 2>/dev/null | sort -V | tail -n1)
+            if [ -z "$pkg_dir" ]; then
+              echo "AVISO: no encontré '$pkg' en el pub-cache (¿cambió el nombre del paquete o la carpeta?). Lo salto."
+              continue
+            fi
+            echo "Encontrado $pkg en: $pkg_dir"
+            if [ -f "$pkg_dir/android/build.gradle.kts" ]; then
+              gradle_file="$pkg_dir/android/build.gradle.kts"
+              cat >> "$gradle_file" <<'EOF'
+
+          android {
+              kotlinOptions {
+                  jvmTarget = "11"
+              }
+          }
+          EOF
+            elif [ -f "$pkg_dir/android/build.gradle" ]; then
+              gradle_file="$pkg_dir/android/build.gradle"
+              cat >> "$gradle_file" <<'EOF'
+
+          android {
+              kotlinOptions {
+                  jvmTarget = "11"
+              }
+          }
+          EOF
+            else
+              echo "AVISO: '$pkg' no tiene android/build.gradle(.kts) donde esperaba ($pkg_dir/android/). Lo salto."
+              continue
+            fi
+            echo "--- Parcheado: $gradle_file (últimas líneas) ---"
+            tail -n 8 "$gradle_file"
+          done
+
+      - name: Compilar APK
+        run: flutter build apk --release
+
+      - name: Subir el APK como artefacto descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: asiste-apk
+          path: build/app/outputs/flutter-apk/app-release.apk

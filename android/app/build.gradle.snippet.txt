@@ -1,0 +1,83 @@
+Agrega esto a android/app/build.gradle (o build.gradle.kts si tu proyecto usa
+Kotlin DSL) DESPUÉS de correr "flutter create". Es necesario para que
+flutter_local_notifications compile (usa "core library desugaring").
+
+------------------------------------------------------------------
+Sintaxis Groovy (build.gradle):
+------------------------------------------------------------------
+android {
+    ...
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    defaultConfig {
+        ...
+        minSdkVersion 23
+        multiDexEnabled true
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+}
+
+------------------------------------------------------------------
+Sintaxis Kotlin DSL (build.gradle.kts) — proyectos creados con Flutter
+reciente usan esta por defecto:
+------------------------------------------------------------------
+android {
+    ...
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    defaultConfig {
+        ...
+        minSdk = 23
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+
+Si al compilar Gradle te sugiere una versión distinta de "desugar_jdk_libs",
+usa la que te indique el propio error: cambian con cierta frecuencia.
+
+------------------------------------------------------------------
+IMPORTANTE si vas a compilar un APK de release (minificado):
+------------------------------------------------------------------
+flutter_local_notifications guarda su caché de alarmas programadas con
+Gson. Si tu build de release tiene minifyEnabled/isMinifyEnabled = true
+(el checkbox de "Generate Signed Bundle/APK" en Android Studio lo activa
+por defecto), necesitas SÍ o SÍ:
+
+1. Copiar android_overlay/proguard-rules.pro a android/app/proguard-rules.pro
+   (reemplaza el que haya, suele venir vacío).
+2. Asegurarte de que el bloque "release" de buildTypes tenga:
+
+   Groovy:
+     minifyEnabled true
+     proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+   Kotlin DSL:
+     isMinifyEnabled = true
+     proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+Si te saltas esto, la app compila y se instala sin problema, pero cada vez
+que intentes programar una alarma va a fallar con:
+  "TypeToken must be created with a type argument..."
+Este error no aparece nunca en "flutter run" (modo debug), solo en release,
+así que es fácil no detectarlo hasta que el usuario final lo prueba.
+
+OJO: NO actives "shrinkResources" / "isShrinkResources" (a veces aparece
+como casilla "Shrink resources" en el asistente de Android Studio para
+generar un APK/Bundle firmado). Si lo activas, Android borra del APK final
+el archivo de sonido android/app/src/main/res/raw/alarm.wav porque no
+detecta que se usa (se referencia por nombre de texto 'alarm' desde Dart,
+no desde código nativo), y entonces la alarma falla con:
+  "invalid_sound, The resource alarm could not be found..."
+Deja shrinkResources en false (o simplemente no la actives).
