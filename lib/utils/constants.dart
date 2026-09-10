@@ -19,6 +19,12 @@ class AppConstants {
   static const String prefsEventsKey = 'asiste_events_v1';
   static const String secureKeyPrefix = 'asiste_gemini_key_';
 
+  /// Si la alarma repite la frase en bucle hasta que el usuario toca
+  /// "Aceptar" (true, valor por defecto) o la dice una sola vez y se
+  /// queda esperando en silencio (false). Ajustable en Ajustes; no tiene
+  /// nada que ver con "Repetir todos los días" (eso es por evento).
+  static const String prefsLoopAlarmKey = 'asiste_loop_alarm_v1';
+
   static const String notificationChannelId = 'asiste_alarms_v2';
   static const String notificationChannelName = 'Alarmas y recordatorios';
   static const String notificationChannelDescription =

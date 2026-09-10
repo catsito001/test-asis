@@ -31,10 +31,33 @@ class SpeechService {
 
   /// Escucha una sola intervención del usuario y devuelve el texto
   /// reconocido cuando termina de hablar (o al agotarse [timeout]).
+  ///
+  /// [quickAnswer] cambia el modo de escucha: úsalo para preguntas de
+  /// sí/no o de una sola palabra (ej. "¿todos los días?"), donde interesa
+  /// que responda rápido apenas terminas de decir "sí" o "no". Para todo
+  /// lo demás (la descripción inicial del evento, hora, fecha, título)
+  /// deja el valor por defecto (false): usa el modo "dictation", pensado
+  /// para frases más largas con pausas naturales al pensar, en vez del
+  /// modo "confirmation" (el que traía la app antes), que está pensado
+  /// para respuestas cortas y por eso cortaba la escucha muy rápido.
+  ///
+  /// Aviso honesto: en algunos Android/fabricantes (sobre todo Xiaomi),
+  /// el motor de reconocimiento nativo tiene su propio límite de silencio
+  /// interno que ignora lo que le pidamos desde Flutter — así lo advierte
+  /// la propia documentación del paquete ("pauseFor... may be ignored on
+  /// some devices"). Si eso pasa, no hay arreglo posible desde el código
+  /// de la app; por eso el botón de micrófono también sirve para tocarlo
+  /// de nuevo y decir "ya terminé" manualmente en cualquier momento.
   Future<String> listenOnce({
-    Duration timeout = const Duration(seconds: 15),
-    Duration pauseFor = const Duration(seconds: 3),
+    bool quickAnswer = false,
+    Duration? timeout,
+    Duration? pauseFor,
   }) async {
+    final effectiveTimeout =
+        timeout ?? (quickAnswer ? const Duration(seconds: 12) : const Duration(seconds: 45));
+    final effectivePauseFor =
+        pauseFor ?? (quickAnswer ? const Duration(seconds: 2) : const Duration(seconds: 3));
+
     final completer = Completer<String>();
     String best = '';
 
@@ -47,14 +70,15 @@ class SpeechService {
         best = r.recognizedWords;
         if (r.finalResult) finish();
       },
-      listenFor: timeout,
-      pauseFor: pauseFor,
+      listenFor: effectiveTimeout,
+      pauseFor: effectivePauseFor,
       partialResults: true,
       cancelOnError: true,
+      listenMode: quickAnswer ? stt.ListenMode.confirmation : stt.ListenMode.dictation,
     );
 
     // Red de seguridad por si nunca llega un resultado "final".
-    Timer(timeout + const Duration(seconds: 2), finish);
+    Timer(effectiveTimeout + const Duration(seconds: 2), finish);
 
     return completer.future;
   }

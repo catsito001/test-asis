@@ -30,6 +30,10 @@ class _HomeScreenState extends State<HomeScreen> {
   MicButtonState _state = MicButtonState.idle;
   final List<ConversationTurn> _history = [];
   String _userText = '';
+  // Si Gemini está preguntando algo de sí/no (por ahora, solo "¿todos los
+  // días?"), escuchamos en modo "respuesta rápida" en vez del modo normal
+  // de frase larga. Null = escucha libre (descripción inicial, hora, etc).
+  String? _pendingMissingField;
   String _asisteText =
       'Toca el micrófono y dime qué quieres programar: una alarma, '
       'un evento, un recordatorio o una reunión.';
@@ -58,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (_state) {
       case MicButtonState.idle:
         _history.clear();
+        _pendingMissingField = null;
         await _listenAndProcess();
         break;
       case MicButtonState.listening:
@@ -87,7 +92,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     setState(() => _state = MicButtonState.listening);
-    final text = await _speech.listenOnce();
+    final text = await _speech.listenOnce(
+      quickAnswer: _pendingMissingField == 'recurring',
+    );
 
     if (!mounted) return;
     if (text.trim().isEmpty) {
@@ -113,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _history.add(ConversationTurn('model', jsonEncode(result.raw)));
 
       if (result.needsInfo) {
+        _pendingMissingField = result.missingField;
         final question = result.question ?? '¿Puedes repetirlo?';
         await _sayAndListenAgain(question);
         return;

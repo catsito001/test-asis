@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/app_settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/secure_settings_service.dart';
 import '../theme/app_theme.dart';
@@ -16,6 +17,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
   final _settings = SecureSettingsService();
+  final _appSettings = AppSettingsService();
   final List<TextEditingController> _controllers = List.generate(
     AppConstants.maxApiKeys,
     (_) => TextEditingController(),
@@ -23,6 +25,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   bool _loading = true;
   bool _saving = false;
   bool? _exactAlarmsGranted;
+  bool _loopAlarm = true;
 
   @override
   void initState() {
@@ -51,7 +54,11 @@ class _SettingsScreenState extends State<SettingsScreen>
       final v = await _settings.getKey(i + 1);
       _controllers[i].text = v ?? '';
     }
-    if (mounted) setState(() => _loading = false);
+    final loop = await _appSettings.getLoopAlarm();
+    if (mounted) setState(() {
+      _loading = false;
+      _loopAlarm = loop;
+    });
   }
 
   Future<void> _saveAll() async {
@@ -135,6 +142,35 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  Widget _buildLoopAlarmCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.textMuted.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text(
+          'Repetir la alarma en bucle',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: const Text(
+          'Activado: dice el aviso una y otra vez hasta que tocas Aceptar. '
+          'Desactivado: lo dice una sola vez y se queda esperando en '
+          'silencio en la pantalla de la alarma. No tiene relación con '
+          '"Repetir todos los días", que es por evento.',
+          style: TextStyle(color: AppTheme.textMuted),
+        ),
+        value: _loopAlarm,
+        onChanged: (value) async {
+          setState(() => _loopAlarm = value);
+          await _appSettings.setLoopAlarm(value);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -145,6 +181,8 @@ class _SettingsScreenState extends State<SettingsScreen>
               padding: const EdgeInsets.all(20),
               children: [
                 _buildExactAlarmCard(),
+                const SizedBox(height: 16),
+                _buildLoopAlarmCard(),
                 const SizedBox(height: 28),
                 const Text(
                   'Claves de API de Gemini',

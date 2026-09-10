@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/app_settings_service.dart';
 import '../services/events_repository.dart';
 import '../services/notification_service.dart';
 import '../services/tts_service.dart';
@@ -8,7 +9,8 @@ import '../theme/app_theme.dart';
 
 /// Se abre encima de la pantalla de bloqueo (ver showWhenLocked/turnScreenOn
 /// y fullScreenIntent) cuando suena una alarma. Repite el texto del evento
-/// en voz alta hasta que el usuario toca "Aceptar".
+/// en voz alta hasta que el usuario toca "Aceptar" — o lo dice una sola vez,
+/// según el ajuste "Repetir la alarma en bucle" de Ajustes.
 class AlarmRingScreen extends StatefulWidget {
   const AlarmRingScreen({super.key, required this.eventId});
   final String eventId;
@@ -19,6 +21,7 @@ class AlarmRingScreen extends StatefulWidget {
 
 class _AlarmRingScreenState extends State<AlarmRingScreen> {
   final TtsService _tts = TtsService();
+  final AppSettingsService _appSettings = AppSettingsService();
   bool _dismissed = false;
   String _title = 'Tienes un aviso pendiente';
 
@@ -36,6 +39,16 @@ class _AlarmRingScreenState extends State<AlarmRingScreen> {
   }
 
   Future<void> _speakLoop() async {
+    final loop = await _appSettings.getLoopAlarm();
+    if (_dismissed || !mounted) return;
+
+    if (!loop) {
+      // Modo "una sola vez": la dice y se queda en silencio esperando en
+      // esta pantalla a que el usuario toque Aceptar o Posponer.
+      await _tts.speakAndWait('Alarma. $_title');
+      return;
+    }
+
     while (!_dismissed && mounted) {
       await _tts.speakAndWait('Alarma. $_title');
       if (_dismissed || !mounted) break;
