@@ -1,9 +1,9 @@
 package com.asiste.app
 
 import android.util.Log
-import com.rementia.openwakeword.lib.DetectionMode
 import com.rementia.openwakeword.lib.WakeWordEngine
-import com.rementia.openwakeword.lib.WakeWordModel
+import com.rementia.openwakeword.lib.model.DetectionMode
+import com.rementia.openwakeword.lib.model.WakeWordModel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
