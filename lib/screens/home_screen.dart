@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../services/notification_service.dart';
 import '../services/secure_settings_service.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
+import '../services/wake_word_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/conversation_bubble.dart';
 import '../widgets/mic_button.dart';
@@ -22,10 +24,12 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final SpeechService _speech = SpeechService();
   final TtsService _tts = TtsService();
+  final WakeWordService _wakeWord = WakeWordService();
   late final GeminiService _gemini = GeminiService(SecureSettingsService());
+  StreamSubscription<void>? _wakeWordSub;
 
   MicButtonState _state = MicButtonState.idle;
   final List<ConversationTurn> _history = [];
@@ -41,7 +45,30 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _wakeWordSub = _wakeWord.onDetected.listen((_) => _onWakeWordDetected());
     WidgetsBinding.instance.addPostFrameCallback((_) => _requestStartupPermissions());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _wakeWordSub?.cancel();
+    _wakeWord.stop();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Fase 1a: la palabra "Alexa" solo se escucha con la app abierta y en
+    // primer plano. Al pasar a segundo plano soltamos el micrófono (buena
+    // práctica de batería/privacidad); al volver, lo retomamos.
+    if (state == AppLifecycleState.resumed) {
+      if (_state == MicButtonState.idle) _wakeWord.start();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _wakeWord.stop();
+    }
   }
 
   Future<void> _requestStartupPermissions() async {
@@ -52,6 +79,26 @@ class _HomeScreenState extends State<HomeScreen> {
         'para Asiste en los Ajustes del sistema.',
       );
     }
+    // El motor de "Alexa" necesita el permiso de micrófono ya concedido
+    // antes de arrancar (si no, el lado nativo lo intenta y falla en
+    // silencio). ensureReady() lo pide si todavía no se aceptó.
+    final micReady = await _speech.ensureReady();
+    if (micReady) await _wakeWord.start();
+  }
+
+  Future<void> _onWakeWordDetected() async {
+    // Si ya está en medio de algo (hablando, escuchando, pensando),
+    // ignoramos la palabra de activación para no pisar esa conversación.
+    if (_state != MicButtonState.idle) return;
+    _history.clear();
+    _pendingMissingField = null;
+    setState(() {
+      _asisteText = '¿Sí?';
+      _state = MicButtonState.speaking;
+    });
+    await _tts.speakAndWait('¿Sí?');
+    if (!mounted) return;
+    await _listenAndProcess();
   }
 
   void _showSnack(String message) {
@@ -91,10 +138,22 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    // Android solo permite un micrófono (AudioRecord) activo a la vez:
+    // hay que soltar el motor de "Alexa" antes de que speech_to_text
+    // tome el micrófono, o ninguno de los dos funciona bien.
+    await _wakeWord.stop();
     setState(() => _state = MicButtonState.listening);
-    final text = await _speech.listenOnce(
-      quickAnswer: _pendingMissingField == 'recurring',
-    );
+    String text;
+    try {
+      text = await _speech.listenOnce(
+        quickAnswer: _pendingMissingField == 'recurring',
+      );
+    } finally {
+      // SIEMPRE reactivamos, sin importar cómo termine listenOnce (con
+      // texto, vacío, error, cancelado) — si no, "Alexa" se queda sordo
+      // para el resto de la sesión.
+      if (mounted) await _wakeWord.start();
+    }
 
     if (!mounted) return;
     if (text.trim().isEmpty) {

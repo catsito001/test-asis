@@ -25,6 +25,11 @@ class AppConstants {
   /// nada que ver con "Repetir todos los días" (eso es por evento).
   static const String prefsLoopAlarmKey = 'asiste_loop_alarm_v1';
 
+  /// Si al sonar la alarma se activa el micrófono para poder apagarla
+  /// diciendo "ok" (u otras palabras equivalentes), además del botón
+  /// "Aceptar" en pantalla.
+  static const String prefsVoiceDismissKey = 'asiste_voice_dismiss_v1';
+
   static const String notificationChannelId = 'asiste_alarms_v2';
   static const String notificationChannelName = 'Alarmas y recordatorios';
   static const String notificationChannelDescription =

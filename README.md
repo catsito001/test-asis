@@ -211,3 +211,42 @@ desde código nativo) — el síntoma cambió a `invalid_sound, The resource
 alarm could not be found`. Se corrigió dejando `shrinkResources`/
 `isShrinkResources` en `false` tanto en el workflow como en las
 instrucciones manuales.
+
+## Palabra de activación "Alexa" (Fase 1a — experimental)
+
+La app puede escuchar la palabra "Alexa" y arrancar sola una conversación
+(dice "¿Sí?" y empieza a escuchar), usando **openWakeWord**: un motor de
+detección 100% en el dispositivo (no manda audio a ningún servidor),
+gratuito y sin cuenta/clave de ningún proveedor (a diferencia de
+Picovoice Porcupine, que dejó de tener capa gratuita permanente en junio
+de 2026).
+
+**Alcance actual (Fase 1a):** el motor solo corre mientras la app está
+**abierta y en primer plano**. Todavía NO funciona con la pantalla
+apagada o la app en segundo plano — eso es la Fase 1b, pendiente, que
+agrega un servicio en segundo plano y abre la app encima de la pantalla
+de bloqueo (reutilizando el mismo mecanismo que ya usan las alarmas).
+
+**Cómo se integró:**
+- Modelos: `alexa_v0.1.onnx` (el detector de la palabra) +
+  `melspectrogram.onnx` + `embedding_model.onnx` (el preprocesamiento de
+  audio que usa cualquier modelo de openWakeWord), descargados desde las
+  releases oficiales de `dscripka/openWakeWord` e incluidos en
+  `android_overlay/assets/`.
+- Librería Android: `xyz.rementia:openwakeword` (Kotlin, Apache 2.0,
+  Maven Central), en `MainActivity.kt`.
+- Puente con Flutter: `MethodChannel` "asiste/wakeword" — nativo avisa a
+  Dart cuando escucha "Alexa" (`lib/services/wake_word_service.dart`).
+
+**Limitación importante de Android, no de esta app:** el teléfono solo
+permite un micrófono (`AudioRecord`) activo a la vez. Por eso, justo
+antes de usar el reconocimiento de voz normal (`speech_to_text`), la app
+apaga el motor de "Alexa", y lo vuelve a prender apenas termina de
+escucharte — así que hay un par de segundos, después de cada frase que le
+dices, en que "Alexa" todavía no está escuchando de nuevo (el motor
+necesita volver a "calentar" su buffer de audio). Es normal, no es un
+bug.
+
+Si "Alexa" tarda en detectar o da falsos positivos, se puede ajustar el
+`threshold` (0.5 por defecto, más bajo = más sensible) en
+`android_overlay/kotlin/MainActivity.kt`.

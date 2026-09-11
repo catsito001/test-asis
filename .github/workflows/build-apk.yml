@@ -30,6 +30,52 @@ jobs:
           mkdir -p android/app/src/main/res/raw
           cp android_overlay/alarm.wav android/app/src/main/res/raw/alarm.wav
 
+      - name: "Alexa\": copiar modelos ONNX, MainActivity.kt y agregar la dependencia
+        # Fase 1a de la palabra de activación (ver MainActivity.kt para el
+        # detalle). melspectrogram.onnx y embedding_model.onnx van SÍ O SÍ
+        # en la raíz de assets/ (la librería trae esa ruta fija adentro,
+        # sin importar lo que configuremos); el modelo de "alexa" puede ir
+        # en su propia subcarpeta porque ese sí es configurable.
+        run: |
+          mkdir -p android/app/src/main/assets/wakeword
+          cp android_overlay/assets/melspectrogram.onnx android/app/src/main/assets/melspectrogram.onnx
+          cp android_overlay/assets/embedding_model.onnx android/app/src/main/assets/embedding_model.onnx
+          cp android_overlay/assets/wakeword/alexa.onnx android/app/src/main/assets/wakeword/alexa.onnx
+
+          KOTLIN_DIR="android/app/src/main/kotlin/com/asiste/app"
+          mkdir -p "$KOTLIN_DIR"
+          cp android_overlay/kotlin/MainActivity.kt "$KOTLIN_DIR/MainActivity.kt"
+
+          if [ -f android/app/build.gradle.kts ]; then
+            cat >> android/app/build.gradle.kts <<'EOF'
+
+          android {
+              defaultConfig {
+                  minSdk = maxOf(23, minSdk ?: 23)
+              }
+          }
+
+          dependencies {
+              implementation("xyz.rementia:openwakeword:0.1.5")
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+          }
+          EOF
+          else
+            cat >> android/app/build.gradle <<'EOF'
+
+          android {
+              defaultConfig {
+                  minSdkVersion 23
+              }
+          }
+
+          dependencies {
+              implementation 'xyz.rementia:openwakeword:0.1.5'
+              implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0'
+          }
+          EOF
+          fi
+
       - name: Reglas de ProGuard/R8 para flutter_local_notifications (Gson)
         # Sin esto, el build de release (minificado) rompe al programar
         # alarmas con "TypeToken must be created with a type argument",

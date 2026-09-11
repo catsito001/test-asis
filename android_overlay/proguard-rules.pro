@@ -27,3 +27,12 @@
 
 # Conserva las clases del propio plugin de notificaciones/alarmas.
 -keep class com.dexterous.flutterlocalnotifications.** { *; }
+
+# --- openWakeWord ("Alexa") + ONNX Runtime ---
+# ONNX Runtime usa métodos nativos (JNI) y esos nombres de clase/método no
+# pueden cambiar aunque R8 los minifique, o el motor de detección falla al
+# cargar los modelos. Aprendido de la vuelta anterior con Gson: mejor
+# prevenir esto ahora que esperar a que vuelva a pasar.
+-keep class ai.onnxruntime.** { *; }
+-keep class com.rementia.openwakeword.** { *; }
+-dontwarn ai.onnxruntime.**

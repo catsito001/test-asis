@@ -18,4 +18,14 @@ class AppSettingsService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(AppConstants.prefsLoopAlarmKey, value);
   }
+
+  Future<bool> getVoiceDismiss() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AppConstants.prefsVoiceDismissKey) ?? true;
+  }
+
+  Future<void> setVoiceDismiss(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AppConstants.prefsVoiceDismissKey, value);
+  }
 }

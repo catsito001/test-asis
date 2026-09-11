@@ -81,3 +81,24 @@ detecta que se usa (se referencia por nombre de texto 'alarm' desde Dart,
 no desde código nativo), y entonces la alarma falla con:
   "invalid_sound, The resource alarm could not be found..."
 Deja shrinkResources en false (o simplemente no la actives).
+
+------------------------------------------------------------------
+Si vas a compilar con la función de "Alexa" (Fase 1a) incluida:
+------------------------------------------------------------------
+1. Copia android_overlay/kotlin/MainActivity.kt a
+   android/app/src/main/kotlin/com/asiste/app/MainActivity.kt (reemplaza
+   el que genera Android Studio/flutter create).
+2. Copia android_overlay/assets/melspectrogram.onnx y
+   android_overlay/assets/embedding_model.onnx a
+   android/app/src/main/assets/ (en la RAÍZ, no en subcarpeta — la
+   librería trae esa ruta fija adentro, sin importar lo que configures).
+3. Copia android_overlay/assets/wakeword/alexa.onnx a
+   android/app/src/main/assets/wakeword/alexa.onnx.
+4. Agrega a las dependencias del build.gradle:
+     implementation("xyz.rementia:openwakeword:0.1.5")
+     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+5. Asegúrate de que minSdk sea 23 o más (la librería lo exige).
+6. Copia también las reglas de ProGuard nuevas para ONNX Runtime que ya
+   están en android_overlay/proguard-rules.pro (paso 1 de esta misma
+   sección, más arriba) — sin ellas, el motor de detección puede fallar
+   al cargar los modelos en un build de release minificado.
