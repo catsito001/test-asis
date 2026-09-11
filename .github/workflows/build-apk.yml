@@ -30,7 +30,7 @@ jobs:
           mkdir -p android/app/src/main/res/raw
           cp android_overlay/alarm.wav android/app/src/main/res/raw/alarm.wav
 
-      - name: "Alexa\": copiar modelos ONNX, MainActivity.kt y agregar la dependencia
+      - name: "Alexa: copiar modelos ONNX, MainActivity.kt y agregar la dependencia"
         # Fase 1a de la palabra de activación (ver MainActivity.kt para el
         # detalle). melspectrogram.onnx y embedding_model.onnx van SÍ O SÍ
         # en la raíz de assets/ (la librería trae esa ruta fija adentro,
